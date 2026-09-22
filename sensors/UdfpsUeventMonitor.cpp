@@ -25,17 +25,6 @@ namespace implementation {
 
 namespace {
 
-/*
- * Emitted by the ZTE Goodix touch driver when a finger lands inside the FOD
- * area while the panel is in AOD/doze. The screen-on variant of the same event
- * is "areameet_down=true"; it is deliberately ignored here because the normal
- * touch path already drives the UDFPS overlay while the screen is on.
- */
-constexpr char kAodAreaMeetDownToken[] = "aod_areameet_down=true";
-
-/* DEVPATH of the uevent carrier device created by ufp_mac_init(). */
-constexpr char kZteTouchDevPathToken[] = "DEVPATH=/devices/platform/zte_touch";
-
 /* A kobject uevent is a small, NUL separated list of KEY=VALUE strings. */
 constexpr size_t kUeventBufferSize = 2048;
 

@@ -114,6 +114,8 @@ Return<Result> UdfpsSubHal::initialize(const sp<IHalProxyCallback>& halProxyCall
     std::lock_guard<std::mutex> lock(mLock);
     mCallback = halProxyCallback;
     mOperationMode = OperationMode::NORMAL;
+    mActive = false;
+    mTriggered = false;
 
     return Result::OK;
 }
@@ -129,7 +131,7 @@ Return<void> UdfpsSubHal::getSensorsList(V2_0::ISensors::getSensorsList_cb _hidl
     sensor.typeAsString = kUdfpsSensorStringType;
     sensor.maxRange = kDisplayMaxDimension;
     sensor.resolution = 1.0f;
-    sensor.power = 0.0f;
+    sensor.power = 0.001f;
     /* One-shot sensors report a minimum delay of -1 and no batching. */
     sensor.minDelay = -1;
     sensor.maxDelay = 0;
@@ -147,10 +149,14 @@ Return<void> UdfpsSubHal::getSensorsList(V2_0::ISensors::getSensorsList_cb _hidl
 }
 
 Return<Result> UdfpsSubHal::setOperationMode(OperationMode mode) {
-    if (mode != OperationMode::NORMAL) {
-        return Result::BAD_VALUE;
-    }
-
+    /*
+     * The HalProxy forwards this call to every sub-HAL and fails the whole
+     * operation if one of them rejects it, so rejecting DATA_INJECTION here
+     * would take the SSC sub-HAL down with us. The sensors reference sub-HAL
+     * likewise stores whatever mode it is handed and only uses it to suppress
+     * events; injection itself is reported as unsupported by
+     * injectSensorData().
+     */
     std::lock_guard<std::mutex> lock(mLock);
     mOperationMode = mode;
 
@@ -162,6 +168,18 @@ Return<Result> UdfpsSubHal::activate(int32_t sensorHandle, bool enabled) {
         return Result::BAD_VALUE;
     }
 
+    /*
+     * Re-arm the one-shot latch. SystemUI's DozeSensors TriggerSensor releases
+     * the sensor after every trigger and requests it again on the next AOD
+     * state change, so each press starts with a fresh activate(true) and this
+     * reset is what makes the second (and every later) screen-off press work.
+     */
+    {
+        std::lock_guard<std::mutex> lock(mLock);
+        mActive = enabled;
+        mTriggered = false;
+    }
+
     if (enabled) {
         if (!mMonitor.start([this] { postTriggerEvent(); })) {
             /*
@@ -170,6 +188,8 @@ Return<Result> UdfpsSubHal::activate(int32_t sensorHandle, bool enabled) {
              * enabled.
              */
             LOG(ERROR) << "Failed to start monitoring the FOD uevent stream";
+            std::lock_guard<std::mutex> lock(mLock);
+            mActive = false;
             return Result::NO_MEMORY;
         }
     } else {
@@ -241,7 +261,11 @@ Return<void> UdfpsSubHal::debug(const hidl_handle& fd, const hidl_vec<hidl_strin
     fprintf(out, "  type          : %d\n", kUdfpsSensorType);
     fprintf(out, "  flags         : 0x%x\n", kUdfpsSensorFlags);
     fprintf(out, "  operationMode : %d\n", static_cast<int>(mOperationMode));
+    fprintf(out, "  active        : %s\n", mActive ? "yes" : "no");
+    fprintf(out, "  triggered     : %s\n", mTriggered ? "yes" : "no");
     fprintf(out, "  monitoring    : %s\n", mMonitor.running() ? "yes" : "no");
+    fprintf(out, "  fod center    : %f,%f r=%f\n", kFodCenterX, kFodCenterY, kFodRadius);
+    fprintf(out, "  uevent token  : %s\n", kAodAreaMeetDownToken);
 
     fclose(out);
     return Void();
@@ -251,12 +275,26 @@ void UdfpsSubHal::postTriggerEvent() {
     sp<IHalProxyCallback> callback;
     {
         std::lock_guard<std::mutex> lock(mLock);
-        callback = mCallback;
-    }
 
-    if (callback == nullptr) {
-        LOG(WARNING) << "Dropping UDFPS trigger, the HalProxy callback is not set";
-        return;
+        /*
+         * The kernel driver already reports the press edge only once, but the
+         * one-shot contract is that this sensor fires at most once per arming,
+         * so a second uevent that races in before DozeSensors releases the
+         * sensor is dropped here instead of reaching the HalProxy. mActive is
+         * also checked because an event can still be in flight between
+         * activate(false) and the moment the monitor thread stops.
+         */
+        if (!mActive || mTriggered || mOperationMode == OperationMode::DATA_INJECTION) {
+            return;
+        }
+
+        callback = mCallback;
+        if (callback == nullptr) {
+            LOG(WARNING) << "Dropping UDFPS trigger, the HalProxy callback is not set";
+            return;
+        }
+
+        mTriggered = true;
     }
 
     Event event;
@@ -283,6 +321,8 @@ void UdfpsSubHal::postTriggerEvent() {
      * before handing the event over; the HalProxy treats a wake-up event with
      * an unlocked wake lock as a fatal sub-HAL bug.
      */
+    LOG(INFO) << "AOD FOD press, posting UDFPS trigger at " << kFodCenterX << "," << kFodCenterY;
+
     ScopedWakelock wakelock = callback->createScopedWakelock(true);
     callback->postEvents({event}, std::move(wakelock));
 }

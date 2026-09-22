@@ -16,6 +16,30 @@ namespace sensors {
 namespace V2_0 {
 namespace implementation {
 
+/*
+ * Emitted by the ZTE Goodix touch driver when a finger lands inside the FOD
+ * area while the panel is in AOD/doze. The screen-on variant of the same event
+ * is "areameet_down=true"; it is deliberately ignored here because the normal
+ * touch path already drives the UDFPS overlay while the screen is on.
+ *
+ * The driver emits five related tokens in total (tpd_ufp_mac.h):
+ *
+ *   aod_areameet_down=true   AOD press      - the only one matched here
+ *   areameet_down=true       screen-on press
+ *   areameet_up=true         finger lifted  - the AOD lift reuses this token
+ *   single_tap=true          single tap gesture, also sent just before the AOD
+ *                            down event, so one press produces two uevents
+ *   double_tap=true          double tap gesture
+ *
+ * Matching single_tap would make an ordinary tap trigger authentication, and
+ * matching areameet_down would duplicate what the lit-screen touch path
+ * already does.
+ */
+constexpr char kAodAreaMeetDownToken[] = "aod_areameet_down=true";
+
+/* DEVPATH of the uevent carrier device created by ufp_mac_init(). */
+constexpr char kZteTouchDevPathToken[] = "DEVPATH=/devices/platform/zte_touch";
+
 /**
  * Watches the kernel kobject uevent stream for the ZTE touch driver's finger
  * area meet notification and reports the AOD variant to a callback.

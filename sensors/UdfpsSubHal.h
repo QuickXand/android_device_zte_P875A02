@@ -82,6 +82,15 @@ class UdfpsSubHal : public ISensorsSubHal {
     std::mutex mLock;
     sp<IHalProxyCallback> mCallback;
     OperationMode mOperationMode = OperationMode::NORMAL;
+
+    /*
+     * A one-shot sensor is armed by activate(sensorHandle, true) and fires at
+     * most once per arming, so the trigger is latched here and only cleared by
+     * the next activation. See activate().
+     */
+    bool mActive = false;
+    bool mTriggered = false;
+
     UdfpsUeventMonitor mMonitor;
 };
 

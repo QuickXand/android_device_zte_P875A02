@@ -16,8 +16,12 @@
 // The multi-HAL resolves the names from hals.conf by trying dlopen() with no
 // prefix first and then with /vendor/lib64/hw/ and /odm/lib64/hw/ prepended, so
 // installing into hw/ keeps this library next to the other HAL implementations
-// while still being found. The name must be exact, which is why the "lib"
-// prefix Soong adds by default has to be suppressed through stem.
+// while still being found. The name in hals.conf has to match the installed
+// file name exactly; stem is pinned to the module name so that the two cannot
+// drift apart. The LineageOS sm8750 UDFPS sub-HAL is shipped the same way
+// (module and file name both "sensors.xiaomi.sm8750.udfps", listed verbatim in
+// its hals.conf), which confirms no "lib" prefix is applied to these dotted
+// module names.
 //
 // See UdfpsSubHal.h and UdfpsUeventMonitor.h for the sensor this exposes and
 // how the FOD press is bridged from the kernel.
