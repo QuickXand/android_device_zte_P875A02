@@ -146,10 +146,6 @@ PRODUCT_PACKAGES += \
     vendor.qti.hardware.display.composer-service.xml \
     vendor.qti.hardware.memtrack-service
 
-# Fastboot
-PRODUCT_PACKAGES += \
-    fastbootd
-
 # GPS
 PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/android.hardware.location.gps.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.location.gps.xml
@@ -180,8 +176,8 @@ PRODUCT_PACKAGES += \
     init.vendor.rc \
     ueventd.qcom.rc
 
-# Kernel
-PRODUCT_ENABLE_UFFD_GC := true
+# ION
+$(call soong_config_set_bool,libion,legacy_impl,true)
 
 # Keymaster
 PRODUCT_COPY_FILES += \
